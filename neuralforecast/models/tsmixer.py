@@ -38,12 +38,9 @@ class ResBlock(nn.Module):
         else:
             self.norm = nn.BatchNorm1d
 
-        # print(inputs[-1])
-        # print(ff_dim)
-
         # Temporal Linear
         self.temporal_linear = nn.Sequential(
-            self.norm(1),
+            self.norm(inputs),
             TransposeLayer(1, 2),  # [Batch, Channel, Input Length]
             nn.Linear(inputs[-1], inputs[-1], bias=False),
             activation(),
@@ -53,22 +50,26 @@ class ResBlock(nn.Module):
 
         # Feature Linear
         self.feature_linear = nn.Sequential(
-            self.norm(1),
-            nn.Linear(inputs[-1], ff_dim, bias=False),
+            self.norm(inputs[1:], elementwise_affine=False),
+            nn.Linear(inputs[-1], ff_dim, bias=False),  # [Batch, Input Length, FF_Dim]
             activation(),
             nn.Dropout(dropout),
-            nn.Linear(ff_dim, inputs[-1], bias=False),
+            nn.Linear(ff_dim, inputs[-1], bias=False),  # [Batch, Input Length, Channel]
             activation(),
             nn.Dropout(dropout),
         )
 
     def forward(self, inputs):
         # Temporal Linear
+        print("Input shape before temporal_linear:", inputs.shape)
         x = self.temporal_linear(inputs)
+        print("Output shape after temporal_linear:", x.shape)
         res = x + inputs
 
         # Feature Linear
+        print("Input shape before feature_linear:", res.shape)
         x = self.feature_linear(res)
+        print("Output shape after feature_linear:", x.shape)
         return x + res
 
 # %% ../../nbs/models.tsmixer.ipynb 8
@@ -133,8 +134,6 @@ class TSMixer(BaseMultivariate):
         step_size: int = 1,
         num_lr_decays: int = 0,
         early_stop_patience_steps: int = -1,
-        # hidden_size: int = 1,
-        # n_layers: int = 1,
         scaler_type: str = "robust",
         futr_exog_list=None,
         hist_exog_list=None,
@@ -146,7 +145,6 @@ class TSMixer(BaseMultivariate):
         ###### Specific to TSMixer
         n_series: int = None,  # Number of input channels
         batch_size: int = 32,  # The input batch size
-        # activation: str = 'ReLU',  # Activation required to normalize the MLP
         n_block: int = None,  # Number of residual blocks
         dropout: float = 0.01,  # Droput for MLP layers
         ff_dim: int = None,  # Feature dimensions for each layers
@@ -166,8 +164,6 @@ class TSMixer(BaseMultivariate):
             step_size=step_size,
             num_lr_decays=num_lr_decays,
             early_stop_patience_steps=early_stop_patience_steps,
-            # hidden_size=hidden_size,
-            # n_layers=n_layers,
             scaler_type=scaler_type,
             futr_exog_list=futr_exog_list,
             hist_exog_list=hist_exog_list,
@@ -176,29 +172,19 @@ class TSMixer(BaseMultivariate):
             drop_last_loader=drop_last_loader,
             random_seed=random_seed,
             alias=alias,
-            ##### Specific to TSMixer
-            # activation = activation,
-            n_block=n_block,
-            dropout=dropout,
-            ff_dim=ff_dim,
-            target_slice=target_slice,
             n_series=n_series,
             batch_size=batch_size,
             #####
             **trainer_kwargs
         )
 
-        # self.h = h
-        # self.input_size = input_size
-        self.n_series = n_series
-
         # Parameters specific to TSMixer.
-        # self.activation = activation
+        # self.n_series = n_series
+        self.batch_size = batch_size
         self.n_block = n_block
         self.dropout = dropout
         self.ff_dim = ff_dim
         self.target_slice = target_slice
-        self.batch_size = batch_size
 
         # Create TSMixer-specific modules with learnable parameters
         input_shape = (
@@ -206,7 +192,7 @@ class TSMixer(BaseMultivariate):
             input_size,
             n_series,
         )  # Assuming batch_size, input_size, and n_series are user inputs
-
+        print("Initializing input:", input_shape)
         self.res_blocks = nn.ModuleList(
             [
                 ResBlock(inputs=input_shape, dropout=dropout, ff_dim=ff_dim)
@@ -223,18 +209,16 @@ class TSMixer(BaseMultivariate):
     def forward(self, windows_batch):
 
         x = windows_batch["insample_y"]
-        # insample_mask = windows_batch['insample_mask']
-        # futr_exog = windows_batch['futr_exog']
-        # hist_exog = windows_batch['hist_exog']
-        # stat_exog = windows_batch['stat_exog']
+        print("Read the block:", x)
 
-        input_shape = x.shape[1:]
-        batch_size = x.size(0)  # Get the dynamic batch size
+        ip_shape = x.shape[1:]
+        bs = x.size(0)
+
+        print(ip_shape, bs)
 
         for res_block in self.res_blocks:
-            x = res_block(
-                x.view(batch_size, *input_shape)
-            )  # Reshape to include batch_size
+            x = res_block(x.view(bs, *ip_shape))
+            print(x)
 
         if self.target_slice:
             x = x[:, :, self.target_slice]
@@ -242,7 +226,6 @@ class TSMixer(BaseMultivariate):
         x = self.output_layer(x)
 
         y_pred = x.reshape(x.size(0), self.h, self.loss.outputsize_multiplier)
-        # y_pred = x.view(batch_size, self.h, self.loss.outputsize_multiplier)
         y_pred = self.loss.domain_map(y_pred)
 
         return y_pred
