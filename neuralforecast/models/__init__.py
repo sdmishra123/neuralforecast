@@ -23,4 +23,3 @@ from .fedformer import FEDformer
 from .patchtst import PatchTST
 from .hint import HINT
 from .timesnet import TimesNet
-from .tsmixer import TSMixer
