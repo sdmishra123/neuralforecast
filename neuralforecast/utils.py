@@ -249,7 +249,7 @@ AirPassengers = np.array(
 AirPassengersDF = pd.DataFrame(
     {
         "unique_id": np.ones(len(AirPassengers)),
-        "ds": pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="M"),
+        "ds": pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="ME"),
         "y": AirPassengers,
     }
 )
@@ -261,8 +261,8 @@ unique_id = np.concatenate(
 )
 ds = np.concatenate(
     [
-        pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="M").values,
-        pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="M").values,
+        pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="ME").values,
+        pd.date_range(start="1949-01-01", periods=len(AirPassengers), freq="ME").values,
     ]
 )
 y = np.concatenate([AirPassengers, AirPassengers + 300])
