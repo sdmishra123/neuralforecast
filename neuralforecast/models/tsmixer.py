@@ -26,21 +26,21 @@ class TransposeLayer(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(
-        self, inputs, norm_type="L", activation=nn.ReLU, dropout=0.0, ff_dim=None
-    ):
+    def __init__(self, inputs, activation=nn.ReLU, dropout=0.0, ff_dim=None):
         super(ResBlock, self).__init__()
 
         # inputs  - # [Batch, Input Length, Channel] [0,1,2]
 
-        if norm_type == "L":
-            self.norm = nn.LayerNorm
-        else:
-            self.norm = nn.BatchNorm1d
+        # if norm_type == 'L':
+        #     self.norm = nn.LayerNorm
+        # else:
+        #     self.norm = nn.BatchNorm2d
+
+        self.norm = nn.LayerNorm
 
         # Temporal Linear
         self.temporal_linear = nn.Sequential(
-            self.norm(inputs),
+            self.norm(inputs, eps=1e-5),
             TransposeLayer(1, 2),  # [Batch, Channel, Input Length]
             nn.Linear(inputs[-1], inputs[-1], bias=False),
             activation(),
@@ -50,7 +50,7 @@ class ResBlock(nn.Module):
 
         # Feature Linear
         self.feature_linear = nn.Sequential(
-            self.norm(inputs[1:], elementwise_affine=False),
+            self.norm(inputs[1:], eps=1e-5),
             nn.Linear(inputs[-1], ff_dim, bias=False),  # [Batch, Input Length, FF_Dim]
             activation(),
             nn.Dropout(dropout),
@@ -61,15 +61,15 @@ class ResBlock(nn.Module):
 
     def forward(self, inputs):
         # Temporal Linear
-        print("Input shape before temporal_linear:", inputs.shape)
+        # print("Input shape before temporal_linear:", inputs.shape)
         x = self.temporal_linear(inputs)
-        print("Output shape after temporal_linear:", x.shape)
+        # print("Output shape after temporal_linear:", x.shape)
         res = x + inputs
 
         # Feature Linear
-        print("Input shape before feature_linear:", res.shape)
+        # print("Input shape before feature_linear:", res.shape)
         x = self.feature_linear(res)
-        print("Output shape after feature_linear:", x.shape)
+        # print("Output shape after feature_linear:", x.shape)
         return x + res
 
 # %% ../../nbs/models.tsmixer.ipynb 8
@@ -179,7 +179,6 @@ class TSMixer(BaseMultivariate):
         )
 
         # Parameters specific to TSMixer.
-        # self.n_series = n_series
         self.batch_size = batch_size
         self.n_block = n_block
         self.dropout = dropout
@@ -188,11 +187,11 @@ class TSMixer(BaseMultivariate):
 
         # Create TSMixer-specific modules with learnable parameters
         input_shape = (
-            batch_size,
             input_size,
             n_series,
         )  # Assuming batch_size, input_size, and n_series are user inputs
-        print("Initializing input:", input_shape)
+        # print("Initializing input:",input_shape)
+
         self.res_blocks = nn.ModuleList(
             [
                 ResBlock(inputs=input_shape, dropout=dropout, ff_dim=ff_dim)
@@ -208,24 +207,28 @@ class TSMixer(BaseMultivariate):
 
     def forward(self, windows_batch):
 
-        x = windows_batch["insample_y"]
-        print("Read the block:", x)
+        insample_y = windows_batch["insample_y"]
+        x = insample_y
 
-        ip_shape = x.shape[1:]
-        bs = x.size(0)
+        X = x.unsqueeze(1).permute(0, 1, 2, 3).contiguous()
 
-        print(ip_shape, bs)
+        # print(X.shape)
 
         for res_block in self.res_blocks:
-            x = res_block(x.view(bs, *ip_shape))
-            print(x)
+            x = res_block(X)
 
         if self.target_slice:
             x = x[:, :, self.target_slice]
 
-        x = self.output_layer(x)
+        # print("x after slice",x.size())
 
-        y_pred = x.reshape(x.size(0), self.h, self.loss.outputsize_multiplier)
+        # x = self.output_layer(x)
+        # print("Size of x:", x.size())
+
+        y_pred = x.reshape(x.size(0), self.h, x.size(3))
+        # print("Size of y_pred:", y_pred.size())
+        # print("Forecasts:",y_pred)
+
         y_pred = self.loss.domain_map(y_pred)
 
         return y_pred
