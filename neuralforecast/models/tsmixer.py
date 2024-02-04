@@ -54,11 +54,15 @@ class ResBlock(nn.Module):
 
     def forward(self, inputs):
         # Temporal Linear
+        # print("Input shape before temporal_linear:", inputs.shape)
         x = self.temporal_linear(inputs)
+        # print("Output shape after temporal_linear:", x.shape)
         res = x + inputs
 
         # Feature Linear
+        # print("Input shape before feature_linear:", res.shape)
         x = self.feature_linear(res)
+        # print("Output shape after feature_linear:", x.shape)
         return x + res
 
 # %% ../../nbs/models.tsmixer.ipynb 8
@@ -137,7 +141,7 @@ class TSMixer(BaseMultivariate):
         n_block: int = None,  # Number of residual blocks
         dropout: float = 0.01,  # Droput for MLP layers
         ff_dim: int = None,  # Feature dimensions for each layers
-        target_slice: list = None,  # Prediction window user wnats to analyze
+        target_slice: list = None,  # Prediction window user wnats to analyze. target_slice would be from 0 to n_series - 1.
         ######
         **trainer_kwargs
     ):
@@ -173,6 +177,7 @@ class TSMixer(BaseMultivariate):
         self.dropout = dropout
         self.ff_dim = ff_dim
         self.target_slice = target_slice
+        self.n_series = n_series
 
         # Create TSMixer-specific modules with learnable parameters
         input_shape = (
@@ -187,9 +192,13 @@ class TSMixer(BaseMultivariate):
             ]
         )
 
+        # Output shape after feature_linear: torch.Size([1, 1, 12, 2])
+        # Size after applying output layer: torch.Size([1, 1, 12, 2])
+
         self.output_layer = nn.Sequential(
             TransposeLayer(1, 2),
-            nn.Linear(input_shape[-1], h),
+            # nn.Linear(input_shape[-1], self.h * self.n_series),  # Adjust the output size
+            nn.Linear(input_shape[-1], input_shape[-1]),
             TransposeLayer(1, 2),
         )
 
@@ -203,18 +212,28 @@ class TSMixer(BaseMultivariate):
         for res_block in self.res_blocks:
             x = res_block(X)
 
-        if self.target_slice:
-            x = x[:, :, self.target_slice]
+        if self.target_slice is not None:
+            x = x[:, :, :, self.target_slice]
 
-        # print("x after slice",x.size())
+        # print("x after slicing:",x.size())
 
-        # x = self.output_layer(x)
-        # print("Size of x:", x.size())
+        x = self.output_layer(x)
 
-        y_pred = x.reshape(x.size(0), self.h, x.size(3))
-        # print("Size of y_pred:", y_pred.size())
-        # print("Forecasts:",y_pred)
+        # print("Size after applying output layer:", x.size())
+
+        x = x.view(
+            x.size(0), self.n_series, -1, self.h
+        ).contiguous()  # Reshape to match the sliced input
+
+        # print("Size after reshaping:", x.size())
+
+        x = TransposeLayer(1, 2)(x)
+
+        y_pred = x.reshape(x.size(0), self.h, self.n_series)
 
         y_pred = self.loss.domain_map(y_pred)
+
+        # print("Forecast values:",y_pred)
+        # print("Size of y_pred:", y_pred.size())
 
         return y_pred
