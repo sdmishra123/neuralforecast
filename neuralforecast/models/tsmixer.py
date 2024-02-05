@@ -54,15 +54,11 @@ class ResBlock(nn.Module):
 
     def forward(self, inputs):
         # Temporal Linear
-        # print("Input shape before temporal_linear:", inputs.shape)
         x = self.temporal_linear(inputs)
-        # print("Output shape after temporal_linear:", x.shape)
         res = x + inputs
 
         # Feature Linear
-        # print("Input shape before feature_linear:", res.shape)
         x = self.feature_linear(res)
-        # print("Output shape after feature_linear:", x.shape)
         return x + res
 
 # %% ../../nbs/models.tsmixer.ipynb 8
@@ -109,7 +105,7 @@ class TSMixer(BaseMultivariate):
     `n_block`: int , number of mixer layers/residual blocks.<br>
     `dropout`: float=0., dropout regularization.<br>
     `ff_dim`:int, number of features or characteristics the model should consider when processing information about the data. <br>
-    `target_slice`: list[start,end] the target_slice parameter is used to customize the predicted sequence the model should focus on. When target_slice=None - In this case, the model predicts the entire sequence.<br>
+    `target_slice`: slice[start,end] the target_slice parameter is used to customize the predicted sequence the model should focus on. When target_slice=None - In this case, the model predicts the entire sequence.<br>
     """
 
     # Class attributes
@@ -117,8 +113,8 @@ class TSMixer(BaseMultivariate):
 
     def __init__(
         self,
-        h,  # prediction length
-        input_size,  # Autoregressive terms
+        h,
+        input_size,
         loss=MAE(),
         valid_loss=None,
         learning_rate: float = 1e-3,
@@ -136,12 +132,12 @@ class TSMixer(BaseMultivariate):
         random_seed: int = 1,
         alias=None,
         ###### Specific to TSMixer
-        n_series: int = None,  # Number of input channels
-        batch_size: int = 32,  # The input batch size
-        n_block: int = None,  # Number of residual blocks
-        dropout: float = 0.01,  # Droput for MLP layers
-        ff_dim: int = None,  # Feature dimensions for each layers
-        target_slice: list = None,  # Prediction window user wnats to analyze. target_slice would be from 0 to n_series - 1.
+        n_series: int = None,
+        batch_size: int = 32,
+        n_block: int = None,
+        dropout: float = 0.01,
+        ff_dim: int = None,
+        target_slice: list = None,
         ######
         **trainer_kwargs
     ):
@@ -180,10 +176,7 @@ class TSMixer(BaseMultivariate):
         self.n_series = n_series
 
         # Create TSMixer-specific modules with learnable parameters
-        input_shape = (
-            input_size,
-            n_series,
-        )  # Assuming batch_size, input_size, and n_series are user inputs
+        input_shape = (input_size, n_series)
 
         self.res_blocks = nn.ModuleList(
             [
@@ -192,12 +185,8 @@ class TSMixer(BaseMultivariate):
             ]
         )
 
-        # Output shape after feature_linear: torch.Size([1, 1, 12, 2])
-        # Size after applying output layer: torch.Size([1, 1, 12, 2])
-
         self.output_layer = nn.Sequential(
             TransposeLayer(1, 2),
-            # nn.Linear(input_shape[-1], self.h * self.n_series),  # Adjust the output size
             nn.Linear(input_shape[-1], input_shape[-1]),
             TransposeLayer(1, 2),
         )
@@ -215,25 +204,14 @@ class TSMixer(BaseMultivariate):
         if self.target_slice is not None:
             x = x[:, :, :, self.target_slice]
 
-        # print("x after slicing:",x.size())
-
         x = self.output_layer(x)
 
-        # print("Size after applying output layer:", x.size())
-
-        x = x.view(
-            x.size(0), self.n_series, -1, self.h
-        ).contiguous()  # Reshape to match the sliced input
-
-        # print("Size after reshaping:", x.size())
+        x = x.view(x.size(0), self.n_series, -1, self.h).contiguous()
 
         x = TransposeLayer(1, 2)(x)
 
         y_pred = x.reshape(x.size(0), self.h, self.n_series)
 
         y_pred = self.loss.domain_map(y_pred)
-
-        # print("Forecast values:",y_pred)
-        # print("Size of y_pred:", y_pred.size())
 
         return y_pred
