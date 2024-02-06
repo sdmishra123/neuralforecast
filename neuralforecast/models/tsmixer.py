@@ -105,7 +105,7 @@ class TSMixer(BaseMultivariate):
     `n_block`: int , number of mixer layers/residual blocks.<br>
     `dropout`: float=0., dropout regularization.<br>
     `ff_dim`:int, number of features or characteristics the model should consider when processing information about the data. <br>
-    `target_slice`: slice[start,end] the target_slice parameter is used to customize the predicted sequence the model should focus on. When target_slice=None - In this case, the model predicts the entire sequence.<br>
+    `target_slice`: slice(start,end,stop) used for channel selection. Keep this None <br>
     """
 
     # Class attributes
