@@ -212,8 +212,8 @@ class TSMixer(BaseMultivariate):
         for res_block in self.res_blocks:
             x = res_block(X)
 
-        if self.target_slice is not None:
-            x = x[:, :, :, self.target_slice]
+        #if self.target_slice is not None:
+            #x = x[:, :, :, self.target_slice]
 
         # print("x after slicing:",x.size())
 
